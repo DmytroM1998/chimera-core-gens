@@ -1,0 +1,42 @@
+name: chimera-build
+
+x-builder: &builder
+  image: chimera-linux-builder:local
+  platform: linux/amd64
+  environment:
+    HOME: /work/home
+  volumes:
+    - build-work:/work
+    - ../chimera-common-minibox:/sources/minibox:ro
+    - .:/sources/repository:ro
+    - ./core:/sources/core:ro
+    - ./build/artifacts:/out
+
+services:
+  init:
+    <<: *builder
+    user: "0:0"
+    environment:
+      CHIMERA_UID: "${CHIMERA_UID:-1000}"
+      CHIMERA_GID: "${CHIMERA_GID:-1000}"
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'chown "$${CHIMERA_UID}:$${CHIMERA_GID}" /work /out'
+    network_mode: none
+
+  prepare:
+    <<: *builder
+    build:
+      context: .
+      dockerfile: Dockerfile
+    user: "${CHIMERA_UID:-1000}:${CHIMERA_GID:-1000}"
+    command: ["prepare"]
+
+  compile:
+    <<: *builder
+    user: "${CHIMERA_UID:-1000}:${CHIMERA_GID:-1000}"
+    network_mode: none
+    command: ["all"]
+
+volumes:
+  build-work:

@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+.gitmodules text eol=lf

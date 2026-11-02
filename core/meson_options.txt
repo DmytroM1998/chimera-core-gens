@@ -1,0 +1,4 @@
+option('minibox_dir', type: 'string', value: '',
+  description: 'Path to a miniBox checkout (defaults to ../../chimera-common-minibox). Provides the guest kit headers.')
+option('gens_source', type: 'string', value: '',
+  description: 'The patched Gens-rr/src that tools/prepare_patched_source.py made (defaults to build/gens-source/Gens-rr/src).')

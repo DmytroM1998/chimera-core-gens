@@ -1,0 +1,28 @@
+{
+  "package": "gens",
+  "effectiveTerms": "GPL-2.0 (Gens-Rerecording, as identified by the project requester) together with Starscream's terms, over MIT integration",
+  "commercialUse": "prohibited",
+  "note": "The 68000 core is a C translation of the code that Gens' Starscream generator emits. Starscream's documentation allows distribution of Starscream only in unmodified form, forbids charging for any program that includes it in whole or in part, and requires the credit \"Starscream 680x0 emulation library by Neill Corlett (corlett@elwha.nrrc.ncsu.edu)\". Whether a translated core may be redistributed under these terms has not been settled (docs/LICENSING.md). Until it is, build the package for your own use and do not publish it.",
+  "components": [
+    {
+      "name": "chimera-core-gens (integration)",
+      "license": "MIT",
+      "url": "https://github.com/ToolAssisted-run/chimera-core-gens",
+      "commit": "{selfCommit}",
+      "file": "LICENSE"
+    },
+    {
+      "name": "Gens-Rerecording (machine, VDP, Z80, YM2612, PSG and controller code, translated and unchanged)",
+      "license": "GPL-2.0, with the notices of its individual files",
+      "url": "https://github.com/TASEmulators/gens-rerecording",
+      "commit": "b948995d15034983cbf5562610586d93e0b25a9b",
+      "file": "LICENSES/GPL-2.0.txt"
+    },
+    {
+      "name": "Starscream 680x0 emulation library by Neill Corlett (corlett@elwha.nrrc.ncsu.edu), as translated in gens_m68k_cpu.c",
+      "license": "Starscream terms (non-commercial, credit required)",
+      "url": "https://github.com/TASEmulators/gens-rerecording/tree/b948995d15034983cbf5562610586d93e0b25a9b/Gens-rr/Starscream",
+      "file": "extern/gens-rerecording/Gens-rr/Starscream/Main68k/STARDOC.TXT"
+    }
+  ]
+}

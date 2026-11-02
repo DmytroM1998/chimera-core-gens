@@ -1,0 +1,18 @@
+{
+  "_comment": "A project of this core holds one Mega Drive / Genesis cartridge.",
+  "slots": [
+    {
+      "id": "rom",
+      "title": "slot.rom",
+      "min": 1,
+      "max": 1,
+      "formats": [
+        "md",
+        "gen",
+        "bin",
+        "smd"
+      ],
+      "help": "slot.rom.help"
+    }
+  ]
+}

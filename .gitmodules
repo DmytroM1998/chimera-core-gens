@@ -1,0 +1,3 @@
+[submodule "extern/gens-rerecording"]
+	path = core/extern/gens-rerecording
+	url = https://github.com/TASEmulators/gens-rerecording.git

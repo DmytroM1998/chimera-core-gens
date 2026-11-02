@@ -1,0 +1,88 @@
+diff --git a/Gens-rr/src/psg.c b/Gens-rr/src/psg.c
+index 0bfd6ed..246c274 100644
+--- a/Gens-rr/src/psg.c
++++ b/Gens-rr/src/psg.c
+@@ -14,6 +14,8 @@
+ #include <math.h>
+ #include "psg.h"
+ #include <memory.h>
++#include <stdlib.h>
++#include "gens_audio.h"
+ 
+ 
+ /* Defines */
+@@ -78,7 +80,7 @@ FILE *psg_debug_file = NULL;
+ 
+ extern unsigned int Sound_Extrapol[312][2];
+ extern int Seg_L[882], Seg_R[882];
+-extern int VDP_Current_Line;
++extern int VDP_Current_Line, VDP_Num_Lines, Seg_Length;
+ extern int GYM_Dumping;
+ extern int disableSound2, Seg_Junk[882];
+ static int* LeftAudioBuffer()  {	return disableSound2 ? Seg_Junk : Seg_L;	}
+@@ -446,8 +448,19 @@ void PSG_Special_Update(void)
+ 		if (PSG_Improv) PSG_Update_SIN(PSG_Buf, PSG_Len);
+ 		else PSG_Update(PSG_Buf, PSG_Len);
+ 
+-		PSG_Buf[0] = LeftAudioBuffer() + Sound_Extrapol[VDP_Current_Line + 1][0];
+-		PSG_Buf[1] = RightAudioBuffer() + Sound_Extrapol[VDP_Current_Line + 1][0];
++		{
++			unsigned int next_offset;
++			GensAudioStatus status = gens_audio_next_offset(
++				VDP_Current_Line, VDP_Num_Lines, Seg_Length, Sound_Extrapol,
++				sizeof(Sound_Extrapol) / sizeof(Sound_Extrapol[0]), &next_offset);
++			if (status != GENS_AUDIO_OK)
++			{
++				fprintf(stderr, "gens: invalid PSG audio cursor (%d)\n", (int)status);
++				abort();
++			}
++			PSG_Buf[0] = LeftAudioBuffer() + next_offset;
++			PSG_Buf[1] = RightAudioBuffer() + next_offset;
++		}
+ 		PSG_Len = 0;
+ 	}
+ }
+diff --git a/Gens-rr/src/ym2612.c b/Gens-rr/src/ym2612.c
+index d1ef5f0..f792255 100644
+--- a/Gens-rr/src/ym2612.c
++++ b/Gens-rr/src/ym2612.c
+@@ -14,6 +14,8 @@
+ #include <math.h>
+ #include "ym2612.h"
+ #include <memory.h>
++#include <stdlib.h>
++#include "gens_audio.h"
+ 
+ 
+ /********************************************
+@@ -235,7 +237,7 @@ FILE *debug_file = NULL;
+ 
+ extern unsigned int Sound_Extrapol[312][2];
+ extern int Seg_L[882], Seg_R[882];
+-extern int VDP_Current_Line;
++extern int VDP_Current_Line, VDP_Num_Lines, Seg_Length;
+ extern int GYM_Dumping;
+ extern int YM2612_Enable;
+ extern int DAC_Enable;
+@@ -2527,8 +2529,19 @@ void YM2612_Special_Update(void)
+ 	{
+ 		YM2612_Update(YM_Buf, YM_Len);
+ 
+-		YM_Buf[0] = LeftAudioBuffer() + Sound_Extrapol[VDP_Current_Line + 1][0];
+-		YM_Buf[1] = RightAudioBuffer() + Sound_Extrapol[VDP_Current_Line + 1][0];
++		{
++			unsigned int next_offset;
++			GensAudioStatus status = gens_audio_next_offset(
++				VDP_Current_Line, VDP_Num_Lines, Seg_Length, Sound_Extrapol,
++				sizeof(Sound_Extrapol) / sizeof(Sound_Extrapol[0]), &next_offset);
++			if (status != GENS_AUDIO_OK)
++			{
++				fprintf(stderr, "gens: invalid YM audio cursor (%d)\n", (int)status);
++				abort();
++			}
++			YM_Buf[0] = LeftAudioBuffer() + next_offset;
++			YM_Buf[1] = RightAudioBuffer() + next_offset;
++		}
+ 		YM_Len = 0;
+ 	}
+ }
