@@ -51,18 +51,28 @@ the YM2612 timers advance per sample.
 
 ## Importing Gens movies
 
-The Game menu's Import Gens Movie (GMV) asks for the movie and its
-cartridge. `ImportMovie` reads the header as `movie.cpp` does and refuses
-movies older than version 9, movies that start from a savestate, unknown pad
-types and empty movies. It answers with the pad settings, the Team Player
-for a three-player movie with pads 1B and 1C set to three buttons as Gens
-does, and the input log. Each frame becomes one entry:
+Tools > Core-Specific Tools > Gens-Rerecording > Import Gens Movie (GMV)...
+makes a Chimera project from a Gens movie. It is the core's own tool, declared
+under `"tools"` in `waterbox.config`: Chimera calls `RunTool` instead of
+`Init`, with no game. The tool reads the movie and the cartridge the person
+picks (mounted as `movie` and `cartridge`: Chimera builds before
+ToolAssisted-run/chimera d43bb214 mount an empty `rom` in a tool run) and
+writes the project to the file they choose (`project`).
+
+`RunTool` reads the header as `movie.cpp` does and refuses movies older than
+version 9, movies that start from a savestate, unknown pad types and empty
+movies. The project holds the pad settings, the Team Player for a
+three-player movie with pads 1B and 1C set to three buttons as Gens does, the
+cartridge by its file name and SHA-1, the movie's rerecord count, and the
+input, one entry a frame with its columns named:
 
     |..|UDLRABCSXYZM|UDLRABCSXYZM|
 
-with a third player group for Team Player movies. The movie's 50 Hz flag is
-reported as a note, because in Gens the region comes from the cartridge and
-the settings, not from the movie.
+with a third player group for Team Player movies. The project names this
+package by the hash and version Chimera gives the tool. When it is opened,
+Chimera finds the cartridge beside it or asks for it. The movie's 50 Hz flag
+is reported in the tool's answer, because in Gens the region comes from the
+cartridge and the settings, not from the movie.
 
 A movie made with Gens' Clear SRAM option off and an SRAM file present
 started with that file's contents. The core always starts with empty SRAM.

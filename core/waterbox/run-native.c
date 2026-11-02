@@ -1,11 +1,11 @@
 /* run-native.c - the native build of the core, driven through the same exports Chimera calls.
  *
  * The work directory holds what the sandbox would mount: the cartridge (named in "slots", or
- * "rom"), "settings", and for an import "movie".
+ * "rom") and "settings"; for the tool, the request "tool", "movie" and "cartridge".
  *
  * usage:
- *   run-native <dir> import
- *       prints ImportMovie's answer
+ *   run-native <dir> tool
+ *       runs RunTool, which writes "project", and prints its answer
  *   run-native <dir> play <frames> <input-log|-> <trace> [last-frame.ppm]
  *       plays a Chimera input log ([Input] ... [/Input], or bare "|...|" lines) through
  *       FrameAdvance and writes the machine trace of tests/gens_headless_trace.h
@@ -30,7 +30,7 @@ extern int16_t *GetAudio(void);
 extern int GetAudioSampleCount(void);
 extern int IsButtonActive(int32_t index);
 extern int InputWasRead(void);
-extern const char *ImportMovie(void);
+extern const char *RunTool(void);
 extern uint32_t *GetVideoBgra(void);
 extern int GetVideoWidth(void);
 extern int GetVideoHeight(void);
@@ -81,12 +81,12 @@ int main(int argc, char **argv)
 
     if (argc < 3 || chdir(argv[1]) != 0)
     {
-        fprintf(stderr, "usage: run-native <dir> import | play <frames> <log|-> <trace> [ppm]\n");
+        fprintf(stderr, "usage: run-native <dir> tool | play <frames> <log|-> <trace> [ppm]\n");
         return 2;
     }
-    if (strcmp(argv[2], "import") == 0)
+    if (strcmp(argv[2], "tool") == 0)
     {
-        fputs(ImportMovie(), stdout);
+        fputs(RunTool(), stdout);
         fputc('\n', stdout);
         return 0;
     }

@@ -47,7 +47,7 @@ cursor patch in `patches`, is applied to disposable copies.
 - `waterbox\gens_machine.c` wires them into one machine and runs Gens'
   `Init_Genesis`, `Reset_Genesis` and `Do_Genesis_Frame` (`docs\MACHINE.md`).
 - `waterbox\cinterface.c` is the Chimera adapter: settings, input, picture,
-  sound, memory domains, save data and the GMV importer
+  sound, memory domains, save data and the GMV import tool
   (`docs\CHIMERA-CORE.md`).
 
 ## What has been verified
@@ -61,7 +61,7 @@ cursor patch in `patches`, is applied to disposable copies.
   them the 240p Test Suite, six homebrew games and 23 SGDK samples with FM
   music, raster effects and DMA, over 6,000 to 20,000 frames each with
   scripted input.
-- Gens movies imported through the core's own `ImportMovie` and played
+- Gens movies imported through the core's own GMV import and played
   through `FrameAdvance` agree with Gens' own movie playback code, for 3-
   and 6-button pads and for the Team Player.
 - Two real TAS movies played to their last frame identically on the core
