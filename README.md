@@ -1,8 +1,9 @@
 # Chimera Gens core
 
 This repository contains the Linux container build files at its root and the
-emulator core under `core/`. The required `chimera-common-minibox` repository
-sits beside this repository in the parent workspace.
+emulator core under `core/`. It requires the
+[`chimera-common-minibox`](https://github.com/ToolAssisted-run/chimera-common-minibox/)
+repository to be cloned and placed besides the cloned repo folder for the build process to find it.
 
 The upstream Gens-Rerecording submodule is `core/extern/gens-rerecording`,
 pinned to [b948995d15034983cbf5562610586d93e0b25a9b](https://github.com/TASEmulators/gens-rerecording/commit/b948995d15034983cbf5562610586d93e0b25a9b).
