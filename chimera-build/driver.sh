@@ -801,7 +801,7 @@ check_machine() {
     fi
     printf '%s\n' "  PASS: intentional difference detected" >&2
 
-    # Gens movies: the original's own playback code against ImportMovie and FrameAdvance
+    # Gens movies: the original's own playback code against the core's import tool and FrameAdvance
     printf '\n%s\n' "=== Generated GMV movie tests: original Gens vs Chimera core (5000 frames each) ===" >&2
     for movie in "240p 6 6 0" "sgdk_game_platformer 6 6 0" "sgdk_snd_xgm-player 3 6 0" \
         "sgdk_joy-test 6 3 0x20" "battle-4tris 6 6 0xa0"; do
@@ -814,17 +814,24 @@ check_machine() {
         python3 "$tools/headless_input.py" 5000 21 "$run/script"
         python3 "$tools/make_test_gmv.py" "$run/script" "$run/movie" --p1 "$2" --p2 "$3" --flags "$4"
         cp "$roms/$1.bin" "$run/game.bin"
-        printf '{"importRom": "game.bin"}' > "$run/settings"
-        "$directory/run-native" "$run" import > "$run/answer.json"
+        cp "$run/game.bin" "$run/cartridge"
+        printf '{"tool":"import_gmv","package":{"sha1":"","version":""},"options":{},"inputs":{"movie":"movie.gmv","cartridge":"game.bin"},"outputs":{"project":"movie.chimeraProject"}}' \
+            > "$run/tool"
+        "$directory/run-native" "$run" tool > "$run/answer.json"
+        rm "$run/cartridge"
         python3 - "$run" <<'PYIMPORT'
-import json, sys
+import hashlib, json, sys
 run = sys.argv[1]
 answer = json.load(open(run + "/answer.json"))
-if "error" in answer:
-    sys.exit("the import was refused: " + answer["error"])
-open(run + "/settings", "w").write(json.dumps(answer["settings"]))
+if "done" not in answer:
+    sys.exit("the import was refused: " + json.dumps(answer))
+project = json.load(open(run + "/project"))
+rom = project["files"][0]
+if rom["name"] != "game.bin" or rom["sha1"] != hashlib.sha1(open(run + "/game.bin", "rb").read()).hexdigest().upper():
+    sys.exit("the project does not name the cartridge by its name and SHA-1: " + json.dumps(rom))
+open(run + "/settings", "w").write(json.dumps(project["settings"]))
 open(run + "/slots", "w").write(json.dumps({"rom": ["game.bin"]}))
-open(run + "/input.log", "w").write(answer["input"])
+open(run + "/input.log", "w").write("".join(entry + "\n" for entry in project["inputs"]["entries"]))
 PYIMPORT
         cp "$run/movie" "$run/movie.gmv"
         printf '%s\n' "  Running original Gens movie playback..." >&2

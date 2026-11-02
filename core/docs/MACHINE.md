@@ -80,7 +80,7 @@ the Team Player and a 50 Hz header. Bad Apple was left out because it is
 larger than Gens' 6 MiB ROM buffer.
 
 Two real TAS movies, with their cartridges supplied by the user, were
-imported through `ImportMovie` and played through `FrameAdvance` against
+imported through the core's GMV import and played through `FrameAdvance` against
 Gens' own movie playback code. Every block of every frame matched, and both
 sides counted the same lag frames:
 

@@ -3,7 +3,7 @@
  * The emulation is gens_machine.c, a port of the pinned Gens revision that matches the
  * original i386 build frame for frame (docs/MACHINE.md). This file only connects it to
  * Chimera: the cartridge slot, settings, input levels, picture, sound, lag, memory
- * domains, registers, save data and the GMV movie importer.
+ * domains, registers, save data, and the tool that makes a Gens movie (.gmv) into a project.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -358,57 +358,199 @@ ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i)
     return view.sram;
 }
 
-/* ---- importing a Gens movie (.gmv) ---- */
-static char *g_import;
-static size_t g_import_size, g_import_used;
+/* ---- the core's own tool: a Gens movie (.gmv) made into a project ---- */
+/* Chimera offers it under Tools > Core-Specific Tools (the package's "tools") and calls
+ * RunTool instead of Init, with no game. The request is the file "tool":
+ *   {"tool":"import_gmv","package":{"sha1":...,"version":...},"options":{},
+ *    "inputs":{"movie":"<name>","cartridge":"<name>"},"outputs":{"project":"<name>"}}
+ * The movie is mounted as "movie" and the cartridge as "cartridge" (Chimera mounts an empty
+ * "rom" of its own, with no game). The project is written to
+ * "project", which goes straight to the file the person chose. It pins this package by the
+ * hash and version the request gives, and the cartridge by its SHA-1 and its file's name.
+ * The answer is {"done": ...} or {"refused": ...}: a key of the text table, then its
+ * arguments, each after 0x1F. */
+static char g_tool_answer[1024];
 
-static int append(const char *text, size_t length)
+/* {"<what>": "<text>"}, the text escaped for JSON */
+static const char *tool_answer(const char *what, const char *text)
 {
-    if (g_import_used + length + 1u > g_import_size)
+    char *p = g_tool_answer;
+    char *const last = g_tool_answer + sizeof(g_tool_answer) - 8;
+    p += snprintf(p, sizeof(g_tool_answer), "{\"%s\": \"", what);
+    for (; *text && p < last; ++text)
     {
-        size_t next = g_import_size ? g_import_size * 2u : 65536u;
-        char *grown;
-        while (next < g_import_used + length + 1u)
-            next *= 2u;
-        grown = (char *)realloc(g_import, next);
-        if (grown == 0)
-            return 0;
-        g_import = grown;
-        g_import_size = next;
+        unsigned char c = (unsigned char)*text;
+        if (c == '"' || c == '\\')
+            p += sprintf(p, "\\%c", c);
+        else if (c < 0x20u)
+            p += sprintf(p, "\\u%04x", c);
+        else
+            *p++ = (char)c;
     }
-    memcpy(g_import + g_import_used, text, length);
-    g_import_used += length;
-    g_import[g_import_used] = 0;
+    strcpy(p, "\"}");
+    return g_tool_answer;
+}
+
+/* One string of one of the request's objects ("inputs", "package"): 1 when it is there. */
+static int tool_string(const char *request, const char *object, const char *name, char *out,
+                       size_t capacity)
+{
+    char key[96];
+    const char *at, *end;
+    int depth = 1, quoted = 0;
+    size_t length, n = 0;
+    out[0] = 0;
+    snprintf(key, sizeof(key), "\"%s\":{", object);
+    at = strstr(request, key);
+    if (at == 0)
+        return 0;
+    at += strlen(key);
+    for (end = at; *end && depth; ++end)
+    {
+        if (quoted)
+        {
+            if (*end == '\\' && end[1])
+                ++end;
+            else if (*end == '"')
+                quoted = 0;
+        }
+        else if (*end == '"')
+            quoted = 1;
+        else if (*end == '{')
+            ++depth;
+        else if (*end == '}')
+            --depth;
+    }
+    snprintf(key, sizeof(key), "\"%s\":\"", name);
+    length = strlen(key);
+    for (; at + length <= end; ++at)
+    {
+        if (strncmp(at, key, length) != 0)
+            continue;
+        for (at += length; *at && *at != '"' && n + 1 < capacity; ++at)
+        {
+            if (*at == '\\' && at[1])
+            {
+                ++at;
+                /* the escapes a JSON writer uses in a file name: \" \\ \/ and \u00XX */
+                if (*at == 'u' && at[1] && at[2] && at[3] && at[4])
+                {
+                    unsigned int value = 0;
+                    sscanf(at + 1, "%4x", &value);
+                    out[n++] = (char)value;
+                    at += 4;
+                    continue;
+                }
+            }
+            out[n++] = *at;
+        }
+        out[n] = 0;
+        return 1;
+    }
+    return 0;
+}
+
+/* SHA-1 (FIPS 180-4) of a file, as upper-case hex: how a project names its files. */
+static void sha1_block(uint32_t state[5], const uint8_t block[64])
+{
+    uint32_t w[80], a, b, c, d, e, f, k, t;
+    int i;
+    for (i = 0; i < 16; ++i)
+        w[i] = (uint32_t)block[i * 4] << 24 | (uint32_t)block[i * 4 + 1] << 16 |
+               (uint32_t)block[i * 4 + 2] << 8 | block[i * 4 + 3];
+    for (i = 16; i < 80; ++i)
+    {
+        t = w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16];
+        w[i] = t << 1 | t >> 31;
+    }
+    a = state[0];
+    b = state[1];
+    c = state[2];
+    d = state[3];
+    e = state[4];
+    for (i = 0; i < 80; ++i)
+    {
+        if (i < 20)
+        {
+            f = (b & c) | (~b & d);
+            k = 0x5A827999u;
+        }
+        else if (i < 40)
+        {
+            f = b ^ c ^ d;
+            k = 0x6ED9EBA1u;
+        }
+        else if (i < 60)
+        {
+            f = (b & c) | (b & d) | (c & d);
+            k = 0x8F1BBCDCu;
+        }
+        else
+        {
+            f = b ^ c ^ d;
+            k = 0xCA62C1D6u;
+        }
+        t = (a << 5 | a >> 27) + f + e + k + w[i];
+        e = d;
+        d = c;
+        c = b << 30 | b >> 2;
+        b = a;
+        a = t;
+    }
+    state[0] += a;
+    state[1] += b;
+    state[2] += c;
+    state[3] += d;
+    state[4] += e;
+}
+
+static int sha1_file(const char *name, char out[41])
+{
+    uint32_t state[5] = {0x67452301u, 0xEFCDAB89u, 0x98BADCFEu, 0x10325476u, 0xC3D2E1F0u};
+    uint8_t block[64];
+    uint64_t bits = 0;
+    size_t got;
+    int i;
+    FILE *f = fopen(name, "rb");
+    if (f == 0)
+        return 0;
+    while ((got = fread(block, 1, sizeof(block), f)) == sizeof(block))
+    {
+        sha1_block(state, block);
+        bits += 512u;
+    }
+    fclose(f);
+    bits += (uint64_t)got * 8u;
+    block[got++] = 0x80u;
+    if (got > 56u)
+    {
+        memset(block + got, 0, 64u - got);
+        sha1_block(state, block);
+        got = 0;
+    }
+    memset(block + got, 0, 56u - got);
+    for (i = 0; i < 8; ++i)
+        block[56 + i] = (uint8_t)(bits >> (56 - 8 * i));
+    sha1_block(state, block);
+    for (i = 0; i < 5; ++i)
+        snprintf(out + i * 8, 9, "%08X", (unsigned int)state[i]);
     return 1;
 }
 
-static int append_text(const char *text) { return append(text, strlen(text)); }
-
-static int append_json_string(const char *text)
+static void write_json_string(FILE *f, const char *text)
 {
-    char escaped[8];
-    if (!append_text("\""))
-        return 0;
+    fputc('"', f);
     for (; *text; ++text)
     {
         unsigned char c = (unsigned char)*text;
         if (c == '"' || c == '\\')
-        {
-            escaped[0] = '\\';
-            escaped[1] = (char)c;
-            if (!append(escaped, 2))
-                return 0;
-        }
+            fprintf(f, "\\%c", c);
         else if (c < 0x20u)
-        {
-            snprintf(escaped, sizeof(escaped), "\\u%04x", c);
-            if (!append_text(escaped))
-                return 0;
-        }
-        else if (!append((const char *)&c, 1))
-            return 0;
+            fprintf(f, "\\u%04x", c);
+        else
+            fputc(c, f);
     }
-    return append_text("\"");
+    fputc('"', f);
 }
 
 static void pad_columns(char *out, uint16_t pressed)
@@ -419,96 +561,137 @@ static void pad_columns(char *out, uint16_t pressed)
         out[i] = (pressed >> i & 1u) ? mnemonics[i] : '.';
 }
 
+/* The project: the movie's pads as the settings, the cartridge, and one entry a frame. The
+ * columns are named, so they read the same whatever controls the package has later. */
+static int write_project(FILE *f, const GensGmv *movie, const char *title, const char *rom,
+                         const char *rom_sha1, const char *version, const char *sha1)
+{
+    static const char *const buttons[12] = {"Up", "Down", "Left", "Right", "A", "B",
+                                            "C",  "Start", "X", "Y", "Z", "Mode"};
+    const int players = movie->triple ? 3 : 2;
+    char line[64];
+    uint32_t frame;
+    int player, i;
+
+    fputs("{\n  \"title\": ", f);
+    write_json_string(f, title);
+    fputs(",\n  \"core\": {\n    \"name\": \"Gens-Rerecording\",\n    \"version\": ", f);
+    write_json_string(f, version);
+    fputs(",\n    \"sha1\": ", f);
+    write_json_string(f, sha1);
+    fprintf(f, "\n  },\n  \"rerecords\": %u,\n  \"files\": [\n    {\n      \"name\": ",
+            (unsigned int)movie->rerecords);
+    write_json_string(f, rom);
+    fprintf(f, ",\n      \"sha1\": \"%s\",\n      \"slot\": \"rom\"\n    }\n  ],\n", rom_sha1);
+    fprintf(f, "  \"settings\": {\n    \"p1Pad\": \"%s\",\n    \"p2Pad\": \"%s\",\n"
+               "    \"teamPlayer\": %s",
+            movie->p1_buttons == 3u ? "three" : "six", movie->p2_buttons == 3u ? "three" : "six",
+            movie->triple ? "true" : "false");
+    /* Gens' PlaySubMovie makes pads 1B and 1C three-button pads for a Team Player movie. */
+    if (movie->triple)
+        fputs(",\n    \"p1bPad\": \"three\",\n    \"p1cPad\": \"three\"", f);
+    fputs("\n  },\n  \"firmware\": [],\n  \"inputs\": {\n    \"columns\": [[\"Power\", \"Reset\"]", f);
+    for (player = 1; player <= players; ++player)
+    {
+        fputs(", [", f);
+        for (i = 0; i < 12; ++i)
+            fprintf(f, "%s\"P%d %s\"", i ? ", " : "", player, buttons[i]);
+        fputc(']', f);
+    }
+    fputs("],\n    \"entries\": [", f);
+    for (frame = 0; frame < movie->frame_count; ++frame)
+    {
+        uint16_t pressed[3];
+        size_t n = 0;
+        gens_gmv_frame(movie, frame, &pressed[0], &pressed[1], &pressed[2]);
+        memcpy(line, "|..|", 4);
+        n = 4;
+        for (player = 0; player < players; ++player)
+        {
+            pad_columns(line + n, pressed[player]);
+            n += 12;
+            line[n++] = '|';
+        }
+        line[n] = 0;
+        fputs(frame ? ",\n      \"" : "\n      \"", f);
+        fputs(line, f);
+        fputc('"', f);
+    }
+    fputs(movie->frame_count ? "\n    ]\n  },\n" : "]\n  },\n", f);
+    fputs("  \"markers\": [],\n  \"branches\": []\n}\n", f);
+    return !ferror(f);
+}
+
 static const char *import_refusal(GensGmvStatus status)
 {
     switch (status)
     {
-    case GENS_GMV_OLD_VERSION: return "{\"error\": \"import.gmv_old\"}";
-    case GENS_GMV_STATE_REQUIRED: return "{\"error\": \"import.gmv_savestate\"}";
-    case GENS_GMV_UNKNOWN_PADS: return "{\"error\": \"import.gmv_pads\"}";
-    case GENS_GMV_EMPTY: return "{\"error\": \"import.gmv_empty\"}";
-    default: return "{\"error\": \"import.gmv_not_gmv\"}";
+    case GENS_GMV_OLD_VERSION: return tool_answer("refused", "import.gmv_old");
+    case GENS_GMV_STATE_REQUIRED: return tool_answer("refused", "import.gmv_savestate");
+    case GENS_GMV_UNKNOWN_PADS: return tool_answer("refused", "import.gmv_pads");
+    case GENS_GMV_EMPTY: return tool_answer("refused", "import.gmv_empty");
+    default: return tool_answer("refused", "import.gmv_not_gmv");
     }
 }
 
-ECL_EXPORT const char *ImportMovie(void)
+ECL_EXPORT const char *RunTool(void)
 {
+    static char request[16384];
     GensGmv movie;
     GensGmvStatus status;
     uint8_t *data;
     size_t size = 0;
-    char rom[256] = "";
-    char line[64], number[64];
-    uint32_t frame;
+    char movie_name[256], rom[256], title[256], rom_sha1[41], version[128], sha1[64];
+    char done[320];
+    char *dot;
+    FILE *f = fopen("tool", "rb");
+    int wrote;
+
+    size = f != 0 ? fread(request, 1, sizeof(request) - 1u, f) : 0u;
+    if (f != 0)
+        fclose(f);
+    request[size] = 0;
+    if (strstr(request, "\"tool\":\"import_gmv\"") == 0)
+        return tool_answer("refused", "import.unknown_tool");
 
     data = read_file("movie", (size_t)512u * 1024u * 1024u, &size);
     if (data == 0)
-        return "{\"error\": \"import.no_movie\"}";
+        return tool_answer("refused", "import.no_movie");
     status = gens_gmv_parse(data, size, &movie);
     if (status != GENS_GMV_OK)
     {
         free(data);
         return import_refusal(status);
     }
-    wbx_setting_str("importRom", rom, sizeof(rom));
-    if (rom[0] == 0)
+    if (!tool_string(request, "inputs", "cartridge", rom, sizeof(rom)) || rom[0] == 0)
     {
         free(data);
-        return "{\"error\": \"import.which_game\"}";
+        return tool_answer("refused", "import.which_game");
+    }
+    if (!sha1_file("cartridge", rom_sha1))
+    {
+        free(data);
+        snprintf(done, sizeof(done), "error.no_rom\x1f%s", rom);
+        return tool_answer("refused", done);
     }
 
-    g_import_used = 0;
-    if (!append_text("{\"format\": \"Gens Movie (GMV)\", \"settings\": {"))
-        goto fail;
-    snprintf(number, sizeof(number), "\"p1Pad\": \"%s\", \"p2Pad\": \"%s\", \"teamPlayer\": %s",
-             movie.p1_buttons == 3u ? "three" : "six", movie.p2_buttons == 3u ? "three" : "six",
-             movie.triple ? "true" : "false");
-    if (!append_text(number))
-        goto fail;
-    /* Gens' PlaySubMovie makes pads 1B and 1C three-button pads for a Team Player movie. */
-    if (movie.triple && !append_text(", \"p1bPad\": \"three\", \"p1cPad\": \"three\""))
-        goto fail;
-    if (!append_text("}, \"firmware\": [], \"files\": [{\"name\": ") || !append_json_string(rom) ||
-        !append_text(", \"slot\": \"rom\"}], \"notes\": [\"import.gmv_note\""))
-        goto fail;
-    if (movie.pal && !append_text(", \"import.gmv_pal\""))
-        goto fail;
-    if (movie.triple && !append_text(", \"import.gmv_team\""))
-        goto fail;
-    if (!append_text("], \"input\": \"[Input]\\n"))
-        goto fail;
-    for (frame = 0; frame < movie.frame_count; ++frame)
-    {
-        uint16_t p1, p2, p3;
-        size_t n = 0;
-        gens_gmv_frame(&movie, frame, &p1, &p2, &p3);
-        line[n++] = '|';
-        line[n++] = '.';
-        line[n++] = '.';
-        line[n++] = '|';
-        pad_columns(line + n, p1);
-        n += 12;
-        line[n++] = '|';
-        pad_columns(line + n, p2);
-        n += 12;
-        line[n++] = '|';
-        if (movie.triple)
-        {
-            pad_columns(line + n, p3);
-            n += 12;
-            line[n++] = '|';
-        }
-        line[n++] = '\\';
-        line[n++] = 'n';
-        if (!append(line, n))
-            goto fail;
-    }
-    snprintf(number, sizeof(number), "[/Input]\\n\", \"frames\": %u}", movie.frame_count);
-    if (!append_text(number))
-        goto fail;
+    /* the project is named after the movie */
+    tool_string(request, "inputs", "movie", movie_name, sizeof(movie_name));
+    snprintf(title, sizeof(title), "%s", movie_name[0] ? movie_name : "movie");
+    dot = strrchr(title, '.');
+    if (dot != 0 && dot != title)
+        *dot = 0;
+    tool_string(request, "package", "version", version, sizeof(version));
+    tool_string(request, "package", "sha1", sha1, sizeof(sha1));
+
+    f = fopen("project", "wb");
+    wrote = f != 0 && write_project(f, &movie, title, rom, rom_sha1, version, sha1);
+    if (f != 0 && fclose(f) != 0)
+        wrote = 0;
     free(data);
-    return g_import;
-fail:
-    free(data);
-    return "{\"error\": \"import.too_large\"}";
+    if (!wrote)
+        return tool_answer("refused", "import.not_written");
+    snprintf(done, sizeof(done), "%s\x1f%u\x1f%u", movie.pal ? "import.done_pal" : "import.done",
+             (unsigned int)movie.frame_count, (unsigned int)movie.rerecords);
+    return tool_answer("done", done);
 }
