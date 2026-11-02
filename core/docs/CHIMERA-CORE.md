@@ -55,8 +55,9 @@ Tools > Core-Specific Tools > Gens-Rerecording > Import Gens Movie (GMV)...
 makes a Chimera project from a Gens movie. It is the core's own tool, declared
 under `"tools"` in `waterbox.config`: Chimera calls `RunTool` instead of
 `Init`, with no game. The tool reads the movie and the cartridge the person
-picks (mounted as `movie` and `cartridge`; Chimera mounts an empty `rom` of
-its own) and writes the project to the file they choose (`project`).
+picks (mounted as `movie` and `cartridge`: Chimera builds before
+ToolAssisted-run/chimera d43bb214 mount an empty `rom` in a tool run) and
+writes the project to the file they choose (`project`).
 
 `RunTool` reads the header as `movie.cpp` does and refuses movies older than
 version 9, movies that start from a savestate, unknown pad types and empty

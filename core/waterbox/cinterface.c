@@ -363,8 +363,8 @@ ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i)
  * RunTool instead of Init, with no game. The request is the file "tool":
  *   {"tool":"import_gmv","package":{"sha1":...,"version":...},"options":{},
  *    "inputs":{"movie":"<name>","cartridge":"<name>"},"outputs":{"project":"<name>"}}
- * The movie is mounted as "movie" and the cartridge as "cartridge" (Chimera mounts an empty
- * "rom" of its own, with no game). The project is written to
+ * The movie is mounted as "movie" and the cartridge as "cartridge" (Chimera builds before
+ * ToolAssisted-run/chimera d43bb214 mount an empty "rom" in a tool run). The project is written to
  * "project", which goes straight to the file the person chose. It pins this package by the
  * hash and version the request gives, and the cartridge by its SHA-1 and its file's name.
  * The answer is {"done": ...} or {"refused": ...}: a key of the text table, then its
