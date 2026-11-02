@@ -825,13 +825,13 @@ run = sys.argv[1]
 answer = json.load(open(run + "/answer.json"))
 if "done" not in answer:
     sys.exit("the import was refused: " + json.dumps(answer))
-project = json.load(open(run + "/project"))
+project = json.load(open(run + "/project.json"))
 rom = project["files"][0]
 if rom["name"] != "game.bin" or rom["sha1"] != hashlib.sha1(open(run + "/game.bin", "rb").read()).hexdigest().upper():
     sys.exit("the project does not name the cartridge by its name and SHA-1: " + json.dumps(rom))
 open(run + "/settings", "w").write(json.dumps(project["settings"]))
 open(run + "/slots", "w").write(json.dumps({"rom": ["game.bin"]}))
-open(run + "/input.log", "w").write("".join(entry + "\n" for entry in project["inputs"]["entries"]))
+open(run + "/input.log", "w").write(open(run + "/project.input").read())
 PYIMPORT
         cp "$run/movie" "$run/movie.gmv"
         printf '%s\n' "  Running original Gens movie playback..." >&2

@@ -5,7 +5,7 @@
  *
  * usage:
  *   run-native <dir> tool
- *       runs RunTool, which writes "project", and prints its answer
+ *       runs RunTool, which writes "project.json" and "project.input", and prints its answer
  *   run-native <dir> play <frames> <input-log|-> <trace> [last-frame.ppm]
  *       plays a Chimera input log ([Input] ... [/Input], or bare "|...|" lines) through
  *       FrameAdvance and writes the machine trace of tests/gens_headless_trace.h

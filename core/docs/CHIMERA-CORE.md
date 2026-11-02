@@ -56,8 +56,10 @@ makes a Chimera project from a Gens movie. It is the core's own tool, declared
 under `"tools"` in `waterbox.config`: Chimera calls `RunTool` instead of
 `Init`, with no game. The tool reads the movie and the cartridge the person
 picks (mounted as `movie` and `cartridge`: Chimera builds before
-ToolAssisted-run/chimera d43bb214 mount an empty `rom` in a tool run) and
-writes the project to the file they choose (`project`).
+ToolAssisted-run/chimera d43bb214 mount an empty `rom` in a tool run). The
+output is declared a project, so the core writes its two parts, `project.json`
+and `project.input` (one entry a line), and Chimera makes them into the
+project's file where the person chose.
 
 `RunTool` reads the header as `movie.cpp` does and refuses movies older than
 version 9, movies that start from a savestate, unknown pad types and empty
