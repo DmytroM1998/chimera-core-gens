@@ -364,9 +364,11 @@ ECL_EXPORT const uint8_t *GetSaveDataFileBuffer(int32_t i)
  *   {"tool":"import_gmv","package":{"sha1":...,"version":...},"options":{},
  *    "inputs":{"movie":"<name>","cartridge":"<name>"},"outputs":{"project":"<name>"}}
  * The movie is mounted as "movie" and the cartridge as "cartridge" (Chimera builds before
- * ToolAssisted-run/chimera d43bb214 mount an empty "rom" in a tool run). The project is written to
- * "project", which goes straight to the file the person chose. It pins this package by the
- * hash and version the request gives, and the cartridge by its SHA-1 and its file's name.
+ * ToolAssisted-run/chimera d43bb214 mount an empty "rom" in a tool run). The output "project"
+ * is declared a project, so the core writes its two parts, "project.json" and
+ * "project.input", and Chimera makes them into the project's file where the person chose. It
+ * pins this package by the hash and version the request gives, and the cartridge by its
+ * SHA-1 and its file's name.
  * The answer is {"done": ...} or {"refused": ...}: a key of the text table, then its
  * arguments, each after 0x1F. */
 static char g_tool_answer[1024];
@@ -561,10 +563,13 @@ static void pad_columns(char *out, uint16_t pressed)
         out[i] = (pressed >> i & 1u) ? mnemonics[i] : '.';
 }
 
-/* The project: the movie's pads as the settings, the cartridge, and one entry a frame. The
- * columns are named, so they read the same whatever controls the package has later. */
-static int write_project(FILE *f, const GensGmv *movie, const char *title, const char *rom,
-                         const char *rom_sha1, const char *version, const char *sha1)
+/* The project, as the two parts Chimera makes its file of: project.json (the movie's pads
+ * as the settings, the cartridge, the input's columns) and the input, one entry a frame, a
+ * line each. The columns are named, so they read the same whatever controls the package has
+ * later. */
+static int write_project(FILE *f, FILE *lines, const GensGmv *movie, const char *title,
+                         const char *rom, const char *rom_sha1, const char *version,
+                         const char *sha1)
 {
     static const char *const buttons[12] = {"Up", "Down", "Left", "Right", "A", "B",
                                             "C",  "Start", "X", "Y", "Z", "Mode"};
@@ -598,7 +603,7 @@ static int write_project(FILE *f, const GensGmv *movie, const char *title, const
             fprintf(f, "%s\"P%d %s\"", i ? ", " : "", player, buttons[i]);
         fputc(']', f);
     }
-    fputs("],\n    \"entries\": [", f);
+    fputs("]\n  },\n  \"markers\": [],\n  \"branches\": []\n}\n", f);
     for (frame = 0; frame < movie->frame_count; ++frame)
     {
         uint16_t pressed[3];
@@ -612,14 +617,11 @@ static int write_project(FILE *f, const GensGmv *movie, const char *title, const
             n += 12;
             line[n++] = '|';
         }
+        line[n++] = '\n';
         line[n] = 0;
-        fputs(frame ? ",\n      \"" : "\n      \"", f);
-        fputs(line, f);
-        fputc('"', f);
+        fputs(line, lines);
     }
-    fputs(movie->frame_count ? "\n    ]\n  },\n" : "]\n  },\n", f);
-    fputs("  \"markers\": [],\n  \"branches\": []\n}\n", f);
-    return !ferror(f);
+    return !ferror(f) && !ferror(lines);
 }
 
 static const char *import_refusal(GensGmvStatus status)
@@ -644,7 +646,7 @@ ECL_EXPORT const char *RunTool(void)
     char movie_name[256], rom[256], title[256], rom_sha1[41], version[128], sha1[64];
     char done[320];
     char *dot;
-    FILE *f = fopen("tool", "rb");
+    FILE *f = fopen("tool", "rb"), *lines = 0;
     int wrote;
 
     size = f != 0 ? fread(request, 1, sizeof(request) - 1u, f) : 0u;
@@ -684,9 +686,12 @@ ECL_EXPORT const char *RunTool(void)
     tool_string(request, "package", "version", version, sizeof(version));
     tool_string(request, "package", "sha1", sha1, sizeof(sha1));
 
-    f = fopen("project", "wb");
-    wrote = f != 0 && write_project(f, &movie, title, rom, rom_sha1, version, sha1);
+    f = fopen("project.json", "wb");
+    lines = fopen("project.input", "wb");
+    wrote = f != 0 && lines != 0 && write_project(f, lines, &movie, title, rom, rom_sha1, version, sha1);
     if (f != 0 && fclose(f) != 0)
+        wrote = 0;
+    if (lines != 0 && fclose(lines) != 0)
         wrote = 0;
     free(data);
     if (!wrote)
