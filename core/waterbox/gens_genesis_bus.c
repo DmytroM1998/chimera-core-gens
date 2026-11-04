@@ -268,6 +268,53 @@ static int read_byte(void *opaque, GensM68kBusState *state, uint32_t address, ui
     return 1;
 }
 
+static uint8_t *debug_byte(const GensGenesisBus *bus, uint32_t address, int writing)
+{
+    unsigned int handler;
+    uint32_t offset;
+    if (address >= UINT32_C(0x1000000))
+        return 0;
+    handler = bus->read_map[address >> 19];
+    if (handler < 12u)
+    {
+        if (handler == 4u && (bits(bus->config.sram_on) & 1u) != 0u &&
+            address >= bits(bus->config.sram_start) && address <= bits(bus->config.sram_end))
+        {
+            offset = address - bits(bus->config.sram_start);
+            return (bits(bus->config.sram_custom) & 1u) == 0u && offset < bus->config.sram_size ?
+                bus->config.sram + offset : 0;
+        }
+        offset = (handler * UINT32_C(0x80000) + (address & UINT32_C(0x7ffff))) ^ 1u;
+        return !writing && offset < bus->config.rom_size ? bus->config.rom + offset : 0;
+    }
+    if (handler >= 28u)
+    {
+        offset = (address & UINT32_C(0xffff)) ^ 1u;
+        return offset < bus->config.ram_size ? bus->config.ram + offset : 0;
+    }
+    if (handler == 20u && address >= UINT32_C(0xa00000) &&
+        address < UINT32_C(0xa04000) && bus->config.z80_memory != 0)
+    {
+        offset = address & UINT32_C(0x1fff);
+        return offset < bus->config.z80_memory->ram_size ?
+            bus->config.z80_memory->ram + offset : 0;
+    }
+    return 0;
+}
+
+uint8_t gens_genesis_bus_peek(const GensGenesisBus *bus, uint32_t address)
+{
+    const uint8_t *byte = debug_byte(bus, address, 0);
+    return byte != 0 ? *byte : 0;
+}
+
+void gens_genesis_bus_poke(GensGenesisBus *bus, uint32_t address, uint8_t value)
+{
+    uint8_t *byte = debug_byte(bus, address, 1);
+    if (byte != 0)
+        *byte = value;
+}
+
 static int read_word(void *opaque, GensM68kBusState *state, uint32_t address, uint16_t *value)
 {
     return read_memory((GensGenesisBus *)opaque, state, address, 2u, value);

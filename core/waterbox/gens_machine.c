@@ -853,6 +853,17 @@ int gens_machine_input_read(void)
     return Lag_Frame == 0;
 }
 
+uint8_t gens_machine_peek(uint32_t address)
+{
+    return machine.loaded ? gens_genesis_bus_peek(&machine.bus, address) : 0;
+}
+
+void gens_machine_poke(uint32_t address, uint8_t value)
+{
+    if (machine.loaded)
+        gens_genesis_bus_poke(&machine.bus, address, value);
+}
+
 void gens_machine_view(GensMachineView *view)
 {
     GensVdpMachine *vdp = &machine.vdp;

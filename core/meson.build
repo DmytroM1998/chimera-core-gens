@@ -112,4 +112,9 @@ else
                           include_directories('tests')],
     c_args: gens_inc + ['-I' + mb / 'source/guest/include', '-I' + mb / 'extern/jsmn'],
     dependencies: [m])
+  tooling_test = executable('test-gens-tooling', core_sources + files('tests/test_gens_tooling.c'), io_data,
+    include_directories: [include_directories('waterbox/native-shim'), inc],
+    c_args: gens_inc + ['-UNDEBUG', '-I' + mb / 'source/guest/include', '-I' + mb / 'extern/jsmn'],
+    dependencies: [m])
+  test('gens-tooling', tooling_test)
 endif

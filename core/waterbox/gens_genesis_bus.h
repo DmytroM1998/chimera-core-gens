@@ -50,6 +50,11 @@ typedef struct GensGenesisBus {
 int gens_genesis_bus_init(GensGenesisBus *bus, const GensGenesisBusConfig *config);
 void gens_genesis_bus_reset_mapping(GensGenesisBus *bus);
 
+/* Debugger accesses in console byte order. MMIO/unmapped reads are zero and writes are
+ * ignored. These never run devices, CPU hooks or controller polls. ROM is read-only. */
+uint8_t gens_genesis_bus_peek(const GensGenesisBus *bus, uint32_t address);
+void gens_genesis_bus_poke(GensGenesisBus *bus, uint32_t address, uint8_t value);
+
 #ifdef __cplusplus
 }
 #endif

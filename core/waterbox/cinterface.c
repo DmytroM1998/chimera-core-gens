@@ -294,20 +294,52 @@ ECL_EXPORT uint8_t *GetMemoryDomainPtr(int i) { Domain d; return domain(i, &d) ?
 ECL_EXPORT int64_t GetMemoryDomainSize(int i) { Domain d; return domain(i, &d) ? d.size : 0; }
 ECL_EXPORT int GetMemoryDomainWritable(int i) { Domain d; return domain(i, &d) ? d.writable : 0; }
 
+/* Logical addresses for scripts, without the side effects of emulated CPU reads. */
+ECL_EXPORT int GetBusCount(void) { return 1; }
+ECL_EXPORT const char *GetBusName(int i) { return i == 0 ? "M68K BUS" : 0; }
+ECL_EXPORT int64_t GetBusSize(int i) { return i == 0 ? INT64_C(0x1000000) : 0; }
+ECL_EXPORT int GetBusWritable(int i) { return i == 0; }
+ECL_EXPORT int PeekBus(int bus, int address)
+{
+    return bus == 0 ? gens_machine_peek((uint32_t)address) : 0;
+}
+ECL_EXPORT void PokeBus(int bus, int address, int value)
+{
+    if (bus == 0)
+        gens_machine_poke((uint32_t)address, (uint8_t)value);
+}
+
+ECL_INVISIBLE static uint8_t g_bus_chunk[64 * 1024];
+ECL_EXPORT const uint8_t *ReadBus(int bus, int64_t address, int length)
+{
+    int i;
+    if (bus != 0 || address < 0 || address >= INT64_C(0x1000000) ||
+        length <= 0 || length > (int)sizeof(g_bus_chunk) ||
+        length > INT64_C(0x1000000) - address)
+        return 0;
+    for (i = 0; i < length; ++i)
+        g_bus_chunk[i] = gens_machine_peek((uint32_t)(address + i));
+    return g_bus_chunk;
+}
+
 /* ---- 68000 registers ---- */
-static const char *const register_names[20] = {
+static const char *const register_names[] = {
     "D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7",
-    "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "PC", "SR", "SP_other", "Z80 PC"
+    "A0", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "PC", "SR", "SP_other", "Z80 PC",
+    "M68K D0", "M68K D1", "M68K D2", "M68K D3", "M68K D4", "M68K D5", "M68K D6", "M68K D7",
+    "M68K A0", "M68K A1", "M68K A2", "M68K A3", "M68K A4", "M68K A5", "M68K A6", "M68K A7",
+    "M68K PC", "M68K SR"
 };
 
-ECL_EXPORT int32_t GetRegisterCount(void) { return 20; }
+ECL_EXPORT int32_t GetRegisterCount(void) { return (int32_t)(sizeof(register_names) / sizeof(*register_names)); }
 ECL_EXPORT const char *GetRegisterName(int32_t i)
 {
-    return i >= 0 && i < 20 ? register_names[i] : 0;
+    return i >= 0 && i < GetRegisterCount() ? register_names[i] : 0;
 }
 ECL_EXPORT int64_t GetRegisterValue(int32_t i)
 {
     const struct GensM68k *cpu = gens_machine_m68k();
+    if (i >= 20 && i < GetRegisterCount()) i -= 20;
     if (i >= 0 && i < 8) return cpu->dreg[i];
     if (i >= 8 && i < 16) return cpu->areg[i - 8];
     if (i == 16) return cpu->pc;
@@ -318,6 +350,7 @@ ECL_EXPORT int64_t GetRegisterValue(int32_t i)
 }
 ECL_EXPORT int32_t GetRegisterBits(int32_t i)
 {
+    if (i >= 20 && i < GetRegisterCount()) i -= 20;
     return i == 17 || i == 19 ? 16 : (i >= 0 && i < 20 ? 32 : 0);
 }
 

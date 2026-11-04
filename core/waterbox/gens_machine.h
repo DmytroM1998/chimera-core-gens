@@ -64,6 +64,8 @@ const char *gens_machine_error_site(void);
 /* True when the game read a controller during the last frame. */
 int gens_machine_input_read(void);
 void gens_machine_view(GensMachineView *view);
+uint8_t gens_machine_peek(uint32_t address);
+void gens_machine_poke(uint32_t address, uint8_t value);
 
 /* Internal state needed by tests that compare CPU registers. */
 struct GensM68k;

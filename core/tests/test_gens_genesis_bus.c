@@ -293,5 +293,53 @@ int main(void)
            probe.events[1].kind == EVENT_FIX && probe.events[2].kind == EVENT_HOOK);
     z80_state = 2;
     assert(read_at(0xa00012u, GENS_M68K_WORD, &value) == GENS_M68K_BUS_OK && value == 0);
+
+    /* Debugger accesses bypass devices and hooks, but follow the live cartridge map. */
+    clear_events();
+    {
+        GensM68kBusState before = bus.state;
+        int lag_before = Lag_Frame, fetch_before = fake_fetch;
+        rom[0x101] = 0x12;
+        rom[0x100] = 0x34;
+        assert(gens_genesis_bus_peek(&bus, 0x100) == 0x12);
+        assert(gens_genesis_bus_peek(&bus, 0x101) == 0x34);
+        gens_genesis_bus_poke(&bus, 0x100, 0xff);
+        assert(rom[0x101] == 0x12);
+        gens_genesis_bus_poke(&bus, 0xff0020, 0x65);
+        assert(ram[0x21] == 0x65 && gens_genesis_bus_peek(&bus, 0xe00020) == 0x65);
+        gens_genesis_bus_poke(&bus, 0xffffff, 0x87);
+        assert(ram[0xfffe] == 0x87 && gens_genesis_bus_peek(&bus, 0xffffff) == 0x87);
+        z80_ram[0x12] = 0x76;
+        assert(gens_genesis_bus_peek(&bus, 0xa00012) == 0x76);
+        assert(gens_genesis_bus_peek(&bus, 0xa02012) == 0x76);
+        gens_genesis_bus_poke(&bus, 0xa02013, 0x98);
+        assert(z80_ram[0x13] == 0x98);
+        sram_on = 1;
+        sram_write = 0;
+        gens_genesis_bus_poke(&bus, 0x200012, 0xa9);
+        assert(sram[0x12] == 0xa9 && gens_genesis_bus_peek(&bus, 0x200012) == 0xa9);
+        sram_custom = 1;
+        gens_genesis_bus_poke(&bus, 0x200012, 0xbb);
+        assert(sram[0x12] == 0xa9 && gens_genesis_bus_peek(&bus, 0x200012) == 0);
+        sram_custom = 0;
+        bus.read_map[1] = 3;
+        rom[0x180121] = 0xdc;
+        assert(gens_genesis_bus_peek(&bus, 0x080120) == 0xdc);
+        bus.read_map[1] = 28;
+        assert(gens_genesis_bus_peek(&bus, 0x080020) == 0x65);
+        for (i = 0; i < 0x1000000; ++i)
+            (void)gens_genesis_bus_peek(&bus, i);
+        assert(gens_genesis_bus_peek(&bus, 0x1000000) == 0);
+        assert(gens_genesis_bus_peek(&bus, UINT32_MAX) == 0);
+        gens_genesis_bus_poke(&bus, UINT32_MAX, 0xff);
+        gens_genesis_bus_poke(&bus, 0xa10003, 0xff);
+        gens_genesis_bus_poke(&bus, 0xa11100, 0xff);
+        gens_genesis_bus_poke(&bus, 0xa130f3, 0xff);
+        gens_genesis_bus_poke(&bus, 0xc00000, 0xff);
+        assert(gens_genesis_bus_peek(&bus, 0xc00004) == 0);
+        assert(probe.count == 0 && Lag_Frame == lag_before && fake_fetch == fetch_before);
+        assert(memcmp(&before, &bus.state, sizeof(before)) == 0);
+        assert(bus.read_map[1] == 28);
+    }
     return 0;
 }

@@ -28,11 +28,44 @@ language.
 - Memory domains: 68K RAM and the cartridge are word-swapped, as Gens keeps
   them. Then Z80 RAM, SRAM, VRAM, CRAM and VSRAM.
 - Registers: D0 to D7, A0 to A7, PC, SR, the other stack pointer and the Z80
-  PC.
+  PC. The original names and indices are preserved. `M68K D0` to `M68K D7`,
+  `M68K A0` to `M68K A7`, `M68K PC` and `M68K SR` are aliases for scripts
+  using BizHawk's names.
 - Save data: `SRAM.srm` as Gens' `Save_SRAM` writes it, nothing when every
   byte is zero, otherwise the bytes up to the last non-zero one rounded up
   to a power of two. SRAM always starts empty.
 - `IsButtonActive` hides player 3 unless the Team Player is on.
+
+## Lua memory access
+
+Select `memory.usememorydomain("M68K BUS")` for logical 24-bit 68000
+addresses. The bus exports `GetBusCount/Name/Size/Writable`, `PeekBus`,
+`PokeBus` and `ReadBus`. Unlike the raw domains, bytes are in console order:
+`memory.read_u16_be(0xFF0010)` and `memory.read_u32_be(0xFF0010)` read
+big-endian words and longs without manually undoing word swaps.
+
+The debugger bus follows the live cartridge bank mapping, mapped SRAM and
+the 68000 RAM mirrors. Z80 RAM at `0xA00000` to `0xA03FFF` is in native Z80
+byte order, with its 8 KiB mirror. Debugger pokes edit RAM and mapped SRAM
+directly, bypassing CPU ownership and write protection. Cartridge ROM is
+read-only. MMIO and unmapped addresses read zero and ignore writes. The bus
+does not execute device reads or writes, advance timers, change controller
+poll/lag state or run CPU hooks. Inspect chip state through its existing
+domains rather than reading a device port.
+
+`ReadBus` copies up to 64 KiB per call into invisible scratch memory, so a
+tool's reads are not part of savestates. Existing raw domains are unchanged.
+Scripts should explicitly select `M68K BUS` and check the selection succeeds.
+
+This is not a Gens Lua compatibility layer. Use Chimera's own APIs for
+memory, registers, drawing and frame events. Lua memory-execution callbacks,
+state-load events and savestate-synchronised Lua userdata still require
+frontend support and are not implemented by these exports. In particular,
+the Batman and Robin scripts still cannot run unchanged.
+
+The native `gens-tooling` test (also run by `machine-check`) checks these
+exports and register aliases, including a full bus scan that leaves the
+CPU, VDP, RAM and input-poll state unchanged.
 
 ## Input
 
