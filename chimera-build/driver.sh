@@ -130,15 +130,16 @@ build_minibox() {
     # Bound musl's nested make, which otherwise ignores Ninja's job limit.
     python3 - "$build/build.ninja" <<'PYJOBS'
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
 recipe = path.read_text()
-unbounded = "/usr/bin/make -j install"
-bounded = "/usr/bin/make -j1 install"
-if unbounded not in recipe and bounded not in recipe:
+command = re.compile(r"(?<!\S)(/usr/bin/(?:gmake|make)) -j(?:1)? install(?!\S)")
+matches = list(command.finditer(recipe))
+if len(matches) != 1:
     sys.exit("error: miniBox musl make command changed. Cannot safely limit its parallelism.")
-path.write_text(recipe.replace(unbounded, bounded))
+path.write_text(command.sub(lambda match: f"{match[1]} -j1 install", recipe))
 PYJOBS
     printf '%s\n' "Building miniBox with one Ninja job and one musl make job."
     version=$(gcc -dumpfullversion)

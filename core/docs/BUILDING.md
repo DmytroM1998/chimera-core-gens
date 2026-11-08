@@ -60,6 +60,12 @@ After migrating from the old workspace layout, use a fresh project name,
 for example `docker compose -p gens-core-v2`, for every command in the sequence.
 Rebuild the container image to pick up the new driver.
 
+The driver limits musl's nested install to one make job whether Meson
+selects `/usr/bin/make` or `/usr/bin/gmake`. Unexpected or duplicate install
+recipes still stop the build rather than leaving parallelism unbounded.
+After a driver-only update, `docker compose build prepare` refreshes the
+image; the existing prepared work volume can be reused.
+
 The compilation service has no network access:
 
 The `machine-check` also runs the native tooling and memory-callback
