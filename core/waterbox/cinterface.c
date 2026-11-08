@@ -51,6 +51,88 @@ ECL_EXPORT void SetInputPollCallback(uint64_t fn)
     gens_io_poll_hook = g_input_poll != 0 ? input_polled : 0;
 }
 
+#define MEMORY_WATCHES 64
+ECL_INVISIBLE static uintptr_t (*g_memory_callback)(uintptr_t, uintptr_t, uintptr_t,
+                                                   uintptr_t, uintptr_t, uintptr_t);
+ECL_INVISIBLE static uint32_t g_watches[3][MEMORY_WATCHES];
+ECL_INVISIBLE static int g_watch_count[3], g_watch_all[3];
+ECL_INVISIBLE static GensM68kObserver g_observer;
+ECL_INVISIBLE static int g_registers_live;
+ECL_INVISIBLE static uint32_t g_live_pc;
+ECL_INVISIBLE static uint16_t g_live_sr;
+
+static void memory_observed(void *opaque, unsigned int kind, uint32_t address, uint32_t value, unsigned int size,
+                            uint32_t pc, uint16_t sr)
+{
+    int i, match = g_watch_all[kind];
+    (void)opaque;
+    for (i = 0; !match && i < g_watch_count[kind]; ++i)
+        match = g_watches[kind][i] == address;
+    if (match && g_memory_callback != 0)
+    {
+        g_live_pc = pc;
+        g_live_sr = sr;
+        g_registers_live = 1;
+        g_memory_callback(kind, 0, address, value, size, 0);
+        g_registers_live = 0;
+    }
+}
+
+static void update_memory_observer(void)
+{
+    int kind;
+    for (kind = 0; kind < 3; ++kind)
+        g_observer.notify[kind] = g_memory_callback != 0 &&
+            (g_watch_all[kind] || g_watch_count[kind] != 0) ? memory_observed : 0;
+}
+
+ECL_EXPORT const char *GetMemoryCallbackScopes(void) { return "M68K BUS"; }
+ECL_EXPORT int32_t GetMemoryCallbackReplaceable(void) { return 0; }
+ECL_EXPORT void SetMemoryCallback(uint64_t fn)
+{
+    g_memory_callback = (uintptr_t (*)(uintptr_t, uintptr_t, uintptr_t,
+                                       uintptr_t, uintptr_t, uintptr_t))(uintptr_t)fn;
+    update_memory_observer();
+}
+
+ECL_EXPORT int32_t AddMemoryWatch(int32_t kind, int32_t scope, uint64_t address)
+{
+    int i;
+    if (kind < 0 || kind > 2 || scope != 0 ||
+        (address != UINT64_MAX && address > UINT64_C(0xffffff)))
+        return 0;
+    if (address == UINT64_MAX)
+        g_watch_all[kind] = 1;
+    else
+    {
+        for (i = 0; i < g_watch_count[kind]; ++i)
+            if (g_watches[kind][i] == address)
+                return 1;
+        if (g_watch_count[kind] == MEMORY_WATCHES)
+            return 0;
+        g_watches[kind][g_watch_count[kind]++] = (uint32_t)address;
+    }
+    update_memory_observer();
+    return 1;
+}
+
+ECL_EXPORT void RemoveMemoryWatch(int32_t kind, int32_t scope, uint64_t address)
+{
+    int i;
+    if (kind < 0 || kind > 2 || scope != 0)
+        return;
+    if (address == UINT64_MAX)
+        g_watch_all[kind] = 0;
+    else
+        for (i = 0; i < g_watch_count[kind]; ++i)
+            if (g_watches[kind][i] == address)
+            {
+                g_watches[kind][i] = g_watches[kind][--g_watch_count[kind]];
+                break;
+            }
+    update_memory_observer();
+}
+
 static void set_error(const char *key, const char *argument)
 {
     if (argument != 0)
@@ -210,7 +292,7 @@ ECL_EXPORT void FrameAdvance(uint64_t packed)
         gens_machine_power();
     else if (gens_input_reset_requested(packed))
         gens_machine_reset();
-    if (gens_machine_frame(packed) != GENS_MACHINE_OK)
+    if (gens_machine_frame_observed(packed, &g_observer) != GENS_MACHINE_OK)
     {
         fprintf(stderr, "gens: the frame failed at %s\n",
                 gens_machine_error_site() ? gens_machine_error_site() : "an unknown step");
@@ -342,8 +424,8 @@ ECL_EXPORT int64_t GetRegisterValue(int32_t i)
     if (i >= 20 && i < GetRegisterCount()) i -= 20;
     if (i >= 0 && i < 8) return cpu->dreg[i];
     if (i >= 8 && i < 16) return cpu->areg[i - 8];
-    if (i == 16) return cpu->pc;
-    if (i == 17) return cpu->sr;
+    if (i == 16) return g_registers_live ? g_live_pc : cpu->pc;
+    if (i == 17) return g_registers_live ? g_live_sr : cpu->sr;
     if (i == 18) return cpu->asp;
     if (i == 19) return gens_z80_get_pc(gens_machine_z80());
     return 0;

@@ -11,6 +11,15 @@ The public API covers what Gens uses: init, reset, `exec`, `interrupt`, the
 odometer functions, `releaseCycles`, `addCycles` and the PC read. It also has
 `flush_interrupts` for completeness.
 
+`gens_m68k_exec_observed` additionally accepts optional debugger policy for
+the current call. It reports instructions and individual byte/word accesses
+separately from the historical raw hooks, including access sizes and live
+PC/SR values. Instructions report size 0; byte/word accesses report 1/2,
+including the individual words of a longword operation.
+The policy pointer exists only on the active run's stack and is not part
+of the CPU context or a savestate. `gens_m68k_exec` remains the unobserved
+entry point used by the original-versus-port harness.
+
 ## Dispatch tables
 
 `tools\generate_m68k_tables.py` compiles a temporary, instrumented copy of the

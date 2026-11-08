@@ -23,6 +23,8 @@ typedef struct Run {
     uint8_t ah, al;
     int stop;
     uint32_t result;
+    const GensM68kObserver *observer;
+    uint32_t instruction_pc;
 } Run;
 
 static uint16_t dispatch[0x10000];
@@ -270,11 +272,6 @@ static uint16_t ram16(const GensM68k *c, uint32_t offset)
     return (uint16_t)(c->ram[offset] | c->ram[offset + 1u] << 8);
 }
 
-static uint32_t ram32(const GensM68k *c, uint32_t offset)
-{
-    return (uint32_t)ram16(c, offset) | (uint32_t)ram16(c, offset + 2u) << 16;
-}
-
 static void put16(GensM68k *c, uint32_t offset, uint32_t value)
 {
     c->ram[offset] = (uint8_t)value;
@@ -298,6 +295,14 @@ static void airlock_enter(Run *r)
 static uint32_t hook_pc(const Run *r)
 {
     return (uint32_t)(r->esi - r->ebp) - 2u;
+}
+
+static void observed(Run *r, unsigned int kind, uint32_t address, uint32_t value, unsigned int size)
+{
+    const GensM68kObserver *o = r->observer;
+    if (o != 0 && o->notify[kind] != 0)
+        o->notify[kind](o->opaque, kind, address & 0xffffffu, value, size,
+                        r->instruction_pc, current_sr(r));
 }
 
 /* Starscream's write paths emit `sub [_hook_pc],byte 2`, which NASM assembles as a byte-sized
@@ -330,6 +335,7 @@ static void read8(Run *r)
         airlock_enter(r);
     }
     r->edx = c->access_address;
+    observed(r, 1, address, r->ecx & 0xffu, 1);
     read_hook(r, 1);
 }
 
@@ -348,6 +354,7 @@ static void read16(Run *r)
         airlock_enter(r);
     }
     r->edx = c->access_address;
+    observed(r, 1, address, r->ecx & 0xffffu, 2);
     read_hook(r, 2);
 }
 
@@ -358,22 +365,42 @@ static void read32(Run *r, int decrement)
     c->access_address = r->edx;
     if (address >= 0xe00000u)
     {
-        uint32_t value = ram32(c, address & 0xffffu);
+        uint32_t value;
+        if (decrement)
+        {
+            low = ram16(c, (address & 0xffffu) + 2u);
+            observed(r, 1, address + 2u, low, 2);
+            value = ram16(c, address & 0xffffu);
+            observed(r, 1, address, value, 2);
+            value |= low << 16;
+        }
+        else
+        {
+            value = ram16(c, address & 0xffffu);
+            observed(r, 1, address, value, 2);
+            low = ram16(c, (address & 0xffffu) + 2u);
+            observed(r, 1, address + 2u, low, 2);
+            value |= low << 16;
+        }
         r->ecx = value << 16 | value >> 16;
     }
     else if (!decrement)
     {
         airlock_exit(r);
         r->ecx = (r->ecx & 0xffff0000u) | c->bus.read_word(c->bus.opaque, address);
+        observed(r, 1, address, r->ecx & 0xffffu, 2);
         r->ecx <<= 16;
         r->ecx = (r->ecx & 0xffff0000u) | c->bus.read_word(c->bus.opaque, address + 2u);
+        observed(r, 1, address + 2u, r->ecx & 0xffffu, 2);
         airlock_enter(r);
     }
     else
     {
         airlock_exit(r);
         low = c->bus.read_word(c->bus.opaque, address + 2u);
+        observed(r, 1, address + 2u, low, 2);
         r->ecx = low | (uint32_t)c->bus.read_word(c->bus.opaque, address) << 16;
+        observed(r, 1, address, r->ecx >> 16, 2);
         airlock_enter(r);
     }
     r->edx = c->access_address;
@@ -401,6 +428,7 @@ static void write8(Run *r)
         airlock_enter(r);
     }
     r->edx = c->access_address;
+    observed(r, 2, address, value & 0xffu, 1);
     write_hook(r, 1, pc, address, value);
 }
 
@@ -418,6 +446,7 @@ static void write16(Run *r)
         airlock_enter(r);
     }
     r->edx = c->access_address;
+    observed(r, 2, address, value & 0xffffu, 2);
     write_hook(r, 2, pc, address, value);
 }
 
@@ -428,21 +457,37 @@ static void write32(Run *r, int decrement)
     c->access_address = r->edx;
     if (address >= 0xe00000u)
     {
-        put16(c, address & 0xffffu, r->ecx >> 16);
-        put16(c, (address & 0xffffu) + 2u, r->ecx);
+        if (decrement)
+        {
+            put16(c, (address & 0xffffu) + 2u, r->ecx);
+            observed(r, 2, address + 2u, value & 0xffffu, 2);
+            put16(c, address & 0xffffu, r->ecx >> 16);
+            observed(r, 2, address, value >> 16, 2);
+        }
+        else
+        {
+            put16(c, address & 0xffffu, r->ecx >> 16);
+            observed(r, 2, address, value >> 16, 2);
+            put16(c, (address & 0xffffu) + 2u, r->ecx);
+            observed(r, 2, address + 2u, value & 0xffffu, 2);
+        }
     }
     else if (!decrement)
     {
         airlock_exit(r);
         c->bus.write_word(c->bus.opaque, address, (uint16_t)(r->ecx >> 16));
+        observed(r, 2, address, value >> 16, 2);
         c->bus.write_word(c->bus.opaque, address + 2u, (uint16_t)r->ecx);
+        observed(r, 2, address + 2u, value & 0xffffu, 2);
         airlock_enter(r);
     }
     else
     {
         airlock_exit(r);
         c->bus.write_word(c->bus.opaque, address + 2u, (uint16_t)r->ecx);
+        observed(r, 2, address + 2u, value & 0xffffu, 2);
         c->bus.write_word(c->bus.opaque, address, (uint16_t)(r->ecx >> 16));
+        observed(r, 2, address, value >> 16, 2);
         airlock_enter(r);
         /* writememorydecdword returns with ECX rotated by 16 on this path. Callers that set
          * flags from ECX afterwards (MOVE.L to -(An)) see the swapped value. */
@@ -2157,6 +2202,11 @@ static void exec_hook(Run *r)
 
 uint32_t gens_m68k_exec(GensM68k *c, uint32_t odometer)
 {
+    return gens_m68k_exec_observed(c, odometer, 0);
+}
+
+uint32_t gens_m68k_exec_observed(GensM68k *c, uint32_t odometer, const GensM68kObserver *observer)
+{
     Run run, *r = &run;
     uint32_t wanted = odometer - c->odometer;
     int cycles, writeback = 0;
@@ -2172,6 +2222,8 @@ uint32_t gens_m68k_exec(GensM68k *c, uint32_t odometer)
     }
     memset(r, 0, sizeof(*r));
     r->c = c;
+    r->observer = observer;
+    r->instruction_pc = c->pc & 0xffffffu;
     c->cycles_needed = wanted;
     r->edi = (int32_t)wanted - 1;
     r->esi = c->pc;
@@ -2189,6 +2241,7 @@ checkpoint:
 checkpoint_noquit:
     if (pending_interrupt(r, 0))
     {
+        r->instruction_pc = unbased_pc(r) & 0xffffffu;
         flush_interrupts(r);
         uncached_rebase(r);
         if (r->edi < 0)
@@ -2204,11 +2257,13 @@ execloop:
          * original as well. Report the bound error instead. */
         if (r->ebp == 0 && (c->execinfo & 2u) != 0u)
             goto bounderror;
+        r->instruction_pc = unbased_pc(r) & 0xffffffu;
         r->ebx = fetch16(r, 0);
         r->esi += 2u;
         if (writeback)
             c->sr = (uint16_t)((c->sr & 0xff00u) | current_ccr(r));
         exec_hook(r);
+        observed(r, 0, r->instruction_pc, 0, 0);
         cycles = run_routine(r, &gens_m68k_routines[dispatch[r->ebx]]);
         if (r->stop)
             goto execexit;
@@ -2226,6 +2281,7 @@ execloop:
 execquit:
     if (pending_interrupt(r, 1))
     {
+        r->instruction_pc = unbased_pc(r) & 0xffffffu;
         flush_interrupts(r);
         uncached_rebase(r);
         if ((c->execinfo & 2u) != 0u)

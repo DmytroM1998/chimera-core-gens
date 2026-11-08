@@ -59,6 +59,9 @@ GensMachineStatus gens_machine_power(void);
 GensMachineStatus gens_machine_reset(void);
 /* Applies the packed input levels, then runs Do_Genesis_Frame(false). */
 GensMachineStatus gens_machine_frame(uint64_t packed_input);
+struct GensM68kObserver;
+GensMachineStatus gens_machine_frame_observed(uint64_t packed_input,
+                                             const struct GensM68kObserver *observer);
 /* Names the first operation that failed during the last frame, or null. */
 const char *gens_machine_error_site(void);
 /* True when the game read a controller during the last frame. */

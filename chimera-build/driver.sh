@@ -775,6 +775,15 @@ check_machine() {
         -Wl,-z,noexecstack -o "$directory/test-tooling"
     "$directory/test-tooling" || fail "core tooling exports failed: $directory"
 
+    # shellcheck disable=SC2086
+    gcc $cflags -UNDEBUG -I"$work/core/waterbox/native-shim" -I"$work/core/waterbox" \
+        -I"$work/core/tests" -I"$patched" -I"$work/minibox/source/guest/include" \
+        -I"$work/minibox/extern/jsmn" $native_sources "$work/core/tests/test_gens_memory_callbacks.c" \
+        "$patched/ym2612.c" "$patched/psg.c" "$directory/io-data.o" -lm \
+        -Wl,-z,noexecstack -o "$directory/test-memory-callbacks"
+    python3 "$work/core/tests/run_memory_callbacks.py" "$directory/test-memory-callbacks" ||
+        fail "memory callback witness failed: $directory"
+
     # every program: the original against the port, with the same scripted input.
     # These programs run a Z80 sound driver, so a Z80 that never runs fails the check.
     z80_programs=" sgdk_game_platformer sgdk_game_sonic sgdk_project_template sgdk_snd_xgm-player "

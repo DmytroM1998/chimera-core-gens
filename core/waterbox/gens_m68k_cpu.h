@@ -24,6 +24,14 @@ typedef struct GensM68kFetch {
 
 typedef struct GensM68k GensM68k;
 
+/* Debugger observers, separate from Gens' raw trace hooks. Values are bytes/words in
+ * console order. The caller owns this policy outside emulated state. */
+typedef struct GensM68kObserver {
+    void *opaque;
+    void (*notify[3])(void *opaque, unsigned int kind, uint32_t address, uint32_t value, unsigned int size,
+                      uint32_t pc, uint16_t sr);
+} GensM68kObserver;
+
 /* Bus callbacks mirror Gens' M68K_RB, M68K_RW, M68K_WB, M68K_WW and Int_Ack. Addresses are the
  * values the original pushes. While a callback runs the CPU's I/O state is live, so it may call
  * gens_m68k_read_odometer, gens_m68k_release_cycles and gens_m68k_interrupt. */
@@ -73,6 +81,7 @@ struct GensM68k {
 int gens_m68k_init(GensM68k *);
 int gens_m68k_reset(GensM68k *);
 uint32_t gens_m68k_exec(GensM68k *, uint32_t odometer);
+uint32_t gens_m68k_exec_observed(GensM68k *, uint32_t odometer, const GensM68kObserver *);
 int gens_m68k_interrupt(GensM68k *, unsigned int level);
 void gens_m68k_flush_interrupts(GensM68k *);
 uint32_t gens_m68k_read_odometer(const GensM68k *);

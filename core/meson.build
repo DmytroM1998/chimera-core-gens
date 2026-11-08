@@ -117,4 +117,12 @@ else
     c_args: gens_inc + ['-UNDEBUG', '-I' + mb / 'source/guest/include', '-I' + mb / 'extern/jsmn'],
     dependencies: [m])
   test('gens-tooling', tooling_test)
+  callback_test = executable('test-gens-memory-callbacks',
+    core_sources + files('tests/test_gens_memory_callbacks.c'), io_data,
+    include_directories: [include_directories('waterbox/native-shim'), inc,
+                          include_directories('tests')],
+    c_args: gens_inc + ['-UNDEBUG', '-I' + mb / 'source/guest/include', '-I' + mb / 'extern/jsmn'],
+    dependencies: [m])
+  test('gens-memory-callbacks', find_program('python3'),
+    args: [files('tests/run_memory_callbacks.py'), callback_test])
 endif

@@ -62,6 +62,13 @@ Rebuild the container image to pick up the new driver.
 
 The compilation service has no network access:
 
+The `machine-check` also runs the native tooling and memory-callback
+witnesses before the movie comparisons. They require no external game for
+callback coverage. With a native Meson build, run
+`meson test -C build/meson-native gens-tooling gens-memory-callbacks`.
+The separate miniBox/Lua witness and its required Chimera revision are
+described in `CHIMERA-CORE.md`.
+
 ```sh
 docker compose run --rm compile minibox
 docker compose run --rm compile input-check

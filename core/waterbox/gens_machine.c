@@ -703,9 +703,9 @@ static void sound_line(void)
     PSG_Len += (int)Sound_Extrapol[line][1];
 }
 
-static void m68k_exec(int target)
+static void m68k_exec(int target, const GensM68kObserver *observer)
 {
-    gens_m68k_exec(&machine.cpu, (uint32_t)target);
+    gens_m68k_exec_observed(&machine.cpu, (uint32_t)target, observer);
 }
 
 static void z80_to(int target)
@@ -746,7 +746,7 @@ static void line_start(void)
     update_dma();
 }
 
-static void run_frame(void)
+static void run_frame(const GensM68kObserver *observer)
 {
     GensVdpMachine *vdp = &machine.vdp;
     int hint_counter, line;
@@ -773,7 +773,7 @@ static void run_frame(void)
         set_line(line);
         line_start();
         vdp->status |= 0x0004;
-        m68k_exec(machine.cycles_m68k - 404);
+        m68k_exec(machine.cycles_m68k - 404, observer);
         vdp->status &= 0xfffb;
         if (--hint_counter < 0)
         {
@@ -783,7 +783,7 @@ static void run_frame(void)
         }
         if (!gens_vdp_machine_render_line(vdp))
             fail_at("Render_Line");
-        m68k_exec(machine.cycles_m68k);
+        m68k_exec(machine.cycles_m68k, observer);
         z80_to(machine.cycles_z80);
     }
     set_line(line);
@@ -801,14 +801,14 @@ static void run_frame(void)
         update_irq_line();
     }
     vdp->status |= 0x000c;
-    m68k_exec(machine.cycles_m68k - 360);
+    m68k_exec(machine.cycles_m68k - 360, observer);
     z80_to(machine.cycles_z80 - 168);
     vdp->status &= 0xfffb;
     vdp->status |= 0x0080;
     vdp->vdp_int |= 0x8;
     update_irq_line();
     gens_z80_interrupt(&machine.z80, 0xff);
-    m68k_exec(machine.cycles_m68k);
+    m68k_exec(machine.cycles_m68k, observer);
     z80_to(machine.cycles_z80);
 
     for (line = vdp->current_line + 1; line < VDP_Num_Lines; ++line)
@@ -816,9 +816,9 @@ static void run_frame(void)
         set_line(line);
         line_start();
         vdp->status |= 0x0004;
-        m68k_exec(machine.cycles_m68k - 404);
+        m68k_exec(machine.cycles_m68k - 404, observer);
         vdp->status &= 0xfffb;
-        m68k_exec(machine.cycles_m68k);
+        m68k_exec(machine.cycles_m68k, observer);
         z80_to(machine.cycles_z80);
     }
     set_line(line);
@@ -828,13 +828,18 @@ static void run_frame(void)
 
 GensMachineStatus gens_machine_frame(uint64_t packed_input)
 {
+    return gens_machine_frame_observed(packed_input, 0);
+}
+
+GensMachineStatus gens_machine_frame_observed(uint64_t packed_input, const GensM68kObserver *observer)
+{
     if (!machine.loaded)
         return GENS_MACHINE_NOT_LOADED;
     machine.error = 0;
     machine.error_site = 0;
     gens_input_apply(packed_input);
     Lag_Frame = 1;
-    run_frame();
+    run_frame(observer);
     return machine.error ? GENS_MACHINE_BACKEND_ERROR : GENS_MACHINE_OK;
 }
 

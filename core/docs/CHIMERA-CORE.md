@@ -57,15 +57,92 @@ domains rather than reading a device port.
 tool's reads are not part of savestates. Existing raw domains are unchanged.
 Scripts should explicitly select `M68K BUS` and check the selection succeeds.
 
-This is not a Gens Lua compatibility layer. Use Chimera's own APIs for
-memory, registers, drawing and frame events. Lua memory-execution callbacks,
-state-load events and savestate-synchronised Lua userdata still require
-frontend support and are not implemented by these exports. In particular,
-the Batman and Robin scripts still cannot run unchanged.
+Chimera `06066f3` adds `event.onloadstate` and keeps Lua `userdata` with
+newly created branches, restoring it before the branch-load event. These
+are frontend features, not core exports. Greenzone seeks, rewind and raw
+`memorysavestate` loads do not restore that metadata or call the event.
+
+The BizHawk Batman and Robin script uses the supported execution hooks,
+register aliases and big-endian bus reads. Select the bus with
+`assert(memory.usememorydomain("M68K BUS"))`, and create branches while the
+script is active if its userdata should be restored with them. Its
+execution handlers do not need read/write value replacement. Equivalent
+game observations still require the same ROM revision and input and a
+comparison against the other emulator; the synthetic witness does not
+establish game-specific equivalence. Pixel fonts and overlay layout belong
+to the frontend and may differ.
 
 The native `gens-tooling` test (also run by `machine-check`) checks these
 exports and register aliases, including a full bus scan that leaves the
 CPU, VDP, RAM and input-poll state unchanged.
+
+## Lua memory callbacks
+
+Chimera commit `52dea77` or newer can use the four exports
+`GetMemoryCallbackScopes`, `SetMemoryCallback`, `AddMemoryWatch` and
+`RemoveMemoryWatch`. The one scope is `M68K BUS` (index 0, also the default).
+It supports all three kinds: instruction execution (0), reads (1) and writes
+(2). These report actual 68000 activity during `FrameAdvance`, including
+direct RAM accesses and exception handling. They do not report Z80
+accesses, DMA or debugger reads/pokes.
+
+Use `event.on_bus_exec`, `event.on_bus_exec_any`, `event.on_bus_read` and
+`event.on_bus_write`. Chimera's legacy `event.onmemoryexecute`,
+`onmemoryexecuteany`, `onmemoryread` and `onmemorywrite` aliases work too.
+Each kind accepts 64 distinct exact addresses plus an independent wildcard
+(`UINT64_MAX` at the core ABI). Invalid kinds, scopes, non-24-bit addresses
+and full exact-address storage return 0 from `AddMemoryWatch`, so Chimera
+raises a registration error. Duplicate additions are idempotent.
+
+An instruction callback runs before the instruction with value and size 0. Read and
+write callbacks report a byte or word in console order, with no register
+residue in unused bits, and size 1 or 2 respectively. With Chimera
+`06066f3` or newer, Lua receives access flags: `0x4000` for execution,
+`0x11000`/`0x21000` for byte/word reads and `0x12000`/`0x22000` for
+byte/word writes. Longword operations report two word accesses, high
+word first normally and low word first for predecrement operations.
+An exact watch matches the starting address of the reported byte or word,
+not any byte that overlaps it. A write is visible in memory when its
+callback runs. CPU reads of MMIO report the actual device result, while
+debugger reads remain side-effect-free and return zero at MMIO addresses.
+
+`GetMemoryCallbackReplaceable` returns 0. Callbacks are observational:
+`event.can_replace_value("read")` and `"write"` return false, and a numeric
+return cannot replace a CPU access. Writes remain post-commit notifications.
+
+Inside a callback, `emu.getregister` reads live D/A registers and the current
+instruction's PC and SR/CCR, including the `M68K ...` aliases. The callback
+may inspect memory through `PeekBus`/`ReadBus` without recursive notification.
+It must not wait for a frame or recursively run the machine. Register
+mutation is not provided. The original Gens trace hooks keep their existing
+raw values and quirks separately.
+
+The callback pointer, watches and live debugger view are invisible memory.
+They survive state loads, power and reset independently of emulated state.
+The frame passes observer policy to the interpreter, so no observer pointer
+is restored from a savestate. Only active access kinds look up watches.
+Removing a wildcard does not remove exact watches, or vice versa.
+
+Native coverage is `gens-memory-callbacks` in Meson and `machine-check`.
+It verifies values, sizes, ordering, live registers, registration lifecycle and
+unchanged machine traces with observational callbacks enabled.
+
+For the sandbox witness, generate a self-authored ROM:
+
+```sh
+python3 tools/make_callback_rom.py callbacks.bin
+```
+
+Create a new project with that ROM and the rebuilt Gens package in a
+Chimera `06066f3` or newer, then run `tests/memory-callbacks.lua` with no
+other scripts active and enough movie frames to advance. It checks the
+public Lua APIs and flags, frame-event ordering, live register and memory
+reads, watch persistence across core-state and branch round trips,
+branch userdata restoration and unregistration. It creates and leaves a
+branch named `Gens callback witness` in this disposable project. Callback
+failures are collected and checked by the main script, so caught callback
+errors cannot produce its final success message. Native tests do not
+substitute for this miniBox integration check.
 
 ## Input
 
