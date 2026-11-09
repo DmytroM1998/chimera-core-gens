@@ -25,7 +25,8 @@ docker compose run --rm compile core
 `compile all` additionally runs the comparison checks.
 Neither builds the Chimera application or Qt. Output is written to
 `build/artifacts/gens.chimeraCore`. An existing Chimera installation is needed
-only to load the package, not to build it.
+only to load the package, not to build it. The package currently declares
+`windows-x86_64` as its supported Chimera host.
 
 See [the core overview](core/README.md) and
 [the build instructions](core/docs/BUILDING.md) for prerequisites, validation
